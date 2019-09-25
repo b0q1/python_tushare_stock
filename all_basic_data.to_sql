@@ -1,0 +1,10 @@
+import tushare as ts
+import pandas as pd
+from sqlalchemy import create_engine
+import pymysql
+ts.set_token('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+pro=ts.pro_api('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+
+data = pro.query('stock_basic', exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+engine=create_engine("mysql+pymysql://root:my*huawei0001@94.191.35.26/certificate?charset=utf8")
+pd.io.sql.to_sql(data,'all_stock',engine,index=False,if_exists='replace')
