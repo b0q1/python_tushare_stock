@@ -6,12 +6,12 @@ ts.set_token('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
 pro=ts.pro_api('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
 #--------------取出基础数据-----------------------
 data = pro.query('stock_basic', exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
-
+mypassword=my*
 data_symbol=data['ts_code']#取出data列表中的symbol所有数据
 #print(data_symbol[1])
 num=data_symbol.count()#取出数据总个数,data_symbol[0],data_symbol[1]引用代码
 #print(num)
-stock_conn=create_engine("mysql+pymysql://root:my*huawei0001@94.191.35.26/stocks?charset=utf8")
+stock_conn=create_engine("mysql+pymysql://root:mypassword@94.191.35.26/stocks?charset=utf8")
 for i in range(0,num):
     stock_no=data_symbol[i]
     stock_df=pro.query('daily', ts_code=stock_no, start_date='20190901', end_date='20190925')
