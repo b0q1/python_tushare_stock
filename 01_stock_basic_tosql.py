@@ -1,0 +1,30 @@
+import tushare as ts
+import pandas as pd
+from sqlalchemy import create_engine
+
+#1.股票列表
+"""接口：stock_basic,描述：获取基础信息数据，包括股票代码、名称、上市日期、退市日期等"""
+"""输入参数exchange='',	 list_status='L',	is_hs"""
+"""输出参数：ts_code，symbol，name，area，industry，fullname，enname，market，
+exchange，curr_type，list_status，list_date，delist_date，is_hs，"""
+#token=ts.set_token('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+pro=ts.pro_api('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+data_df=pro.query('stock_basic',list_status='L',fields='ts_code,symbol,name,area,list_status,list_date')
+conn = create_engine("mysql+pymysql://root:my*huawei0001@94.191.35.26:3306/stock?charset=utf8")
+pd.io.sql.to_sql(data_df,'stock_basic',conn,index=False,index_label=False)
+
+#将数据查询后存入data_df
+print('取10条:',data_df[0:10])#['symbol']
+#可以输出整个列表，也可以引用其中字段部分进入输出
+print('取1条:',data_df['symbol'][0])
+#还可以引用此列表中的某一个记录
+# (上述引用symbol字段中的第一条记录，可用此进行循环操作)
+# 后续可以入库操作或者引入函数进行其他值计算
+
+#2.交易日历
+"""接口：trade_cal,描述：获取各大交易所交易日历数据,默认提取的是上交所"""
+"""输入参数：exchange，交易所 SSE上交所 SZSE深交所；
+start_date，开始日期，end_date,结束日期；is_open，是否交易"""
+"""输出参数：exchange,cal_date,is_open,pretrade_date"""
+trade_cal=pro.query('trade_cal',exchange='',start_date='20190901',end_date='20190920')
+print(trade_cal)
