@@ -1,0 +1,41 @@
+import tushare as ts
+import pandas as pd
+import numpy as np
+import time
+import pymysql
+from sqlalchemy import create_engine
+pro=ts.pro_api('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+data_stock_basic=pro.query('stock_basic',list_status='L',fields='ts_code,symbol,name,area,list_date')
+ts_code=data_stock_basic['ts_code']
+def get_a_share(code):
+    data_daily_k=pro.query('daily', ts_code=code, start_date='20190101', end_date='')
+    data_daily_k=data_daily_k.sort_values(by=['trade_date'],ascending=True)
+    data_daily_k.index=np.arange(len(data_daily_k))
+    return data_daily_k
+def get_macd_data(data_daily_k,short=0,long=0,mid=0):
+    if short==0:
+        short=12
+    if long==0:
+        long=26
+    if mid==0:
+        mid=9
+    data_daily_k['sema']=pd.Series(data_daily_k['close']).ewm(span=short).mean()
+    data_daily_k['lema']=pd.Series(data_daily_k['close']).ewm(span=long).mean()
+    data_daily_k.fillna(0,inplace=True)
+    data_daily_k['diff']=data_daily_k['sema']-data_daily_k['lema']
+    data_daily_k['dea'] = pd.Series(data_daily_k['diff']).ewm(span=mid).mean()
+    data_daily_k['macd']=2*(data_daily_k['diff']-data_daily_k['dea'])
+    data_daily_k.fillna(0, inplace=True)
+    return data_daily_k[['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'diff', 'dea', 'macd']]
+#macd=get_macd_data(get_a_share('603967.SH'))
+#print(macd)
+conn=create_engine("mysql+pymysql://root:my*huawei0001@94.191.35.26:3306/stocks?charset=utf8")
+#data_stock_basic.to_sql('stock_basic', conn,if_exists='replace',index = True)
+#print(ts_code.count())
+
+for i in range(3626,ts_code.count()):
+    macd=get_macd_data(get_a_share(ts_code[i]))
+    ok=macd.to_sql('stock_macd_daily', conn, index=False, if_exists='append')
+    print(data_stock_basic['name'][i],'i=',i, '该条 is ok--',ok)
+    #time.sleep(1)
+print('data is ok')
