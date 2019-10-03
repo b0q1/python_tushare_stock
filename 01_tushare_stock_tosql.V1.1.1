@@ -39,10 +39,16 @@ def get_macd_data(data_k, short=0, long=0, mid=0):
     data_k.fillna(0, inplace=True)
     return data_k[['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'diff', 'dea', 'macd']]
 
+
+# macd=get_macd_data(get_a_share('603967.SH'))
+# print(macd)
 conn = create_engine("mysql+pymysql://root:my*huawei0001@94.191.35.26:3306/stocks?charset=utf8")
 conn_tolocal = create_engine("mysql+pymysql://root:root@127.0.0.1/stocks?charset=utf8")
 # data_stock_basic.to_sql('stock_basic', conn,if_exists='replace',index = True)
 # print(ts_code.count())
+
+
+
 
 # 加入日线、周线和月线是否需要进行写入数据库的判断
 # 例：以下三个for循环，可以组合成一个函数，通过日线，周线和月线的数据参数带入函数中
@@ -56,11 +62,38 @@ def datainmysql(get_k,db_name):
     #print(data_macd)
     return '数据写入成功！'
 
+"""
+for i in range(0, ts_code.count()):
+    time.sleep(1)
+    daily_macd = get_macd_data(get_daily_k(ts_code[i]))
+    # daily_macd.to_sql('stock_macd_daily', conn, index=False, if_exists='append')
+    print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, '日线数据 is ok--', time.ctime())
+for i in range(0, ts_code.count()):
+    time.sleep(1)
+    weekly_macd = get_macd_data(get_weekly_k(ts_code[i]))
+    # weekly_macd.to_sql('stock_macd_weekly', conn, index=False, if_exists='append')
+    print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, '周线数据 is ok--', time.ctime())
+for i in range(0, ts_code.count()):
+    time.sleep(1)
+    monthly_macd = get_macd_data(get_monthly_k(ts_code[i]))
+    # monthly_macd.to_sql('stock_macd_monthly', conn, index=False, if_exists='append')
+    print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, '月线数据 is ok--', time.ctime())
+"""
 # 在这里可以通过mysql表记录写入完成后的时间或者数据的最后时间
 # 来判断下次再读取数据的开始时间，交易日历可以读取字段进行时间引用
+"""#读取服务器的数据库到本地服务器
+stock_basic_tolocal=pd.read_sql('stock_basic',conn)
+macd_daily_tolocal=pd.read_sql('stock_macd_daily',conn)
+macd_weekly_tolocal=pd.read_sql('stock_macd_weekly',conn)
+stock_basic_tolocal.to_sql('stock_basic',conn_tolocal,if_exists='replace',index = True)
+macd_daily_tolocal.to_sql('macd_daily_tolocal',conn_tolocal,if_exists='replace',index=False)
+macd_weekly_tolocal.to_sql('macd_weekly_tolocal',conn_tolocal,if_exists='replace',index=False)
 
+macd_monthly_tolocal=pd.read_sql('stock_macd_monthly',conn)
+macd_monthly_tolocal.to_sql('macd_monthly_tolocal',conn_tolocal,if_exists='replace',index=False)
+"""
 start = time.perf_counter()
-for i in range(164,ts_code.count()):
+for i in range(252,ts_code.count()):
     time.sleep(5)
     #传入日线的数据线和数据库名称。函数计算出macd值和写入数据库操作
     datainmysql(get_daily_k(ts_code[i]),'daily_macd')
