@@ -1,0 +1,73 @@
+import tushare as ts
+import pandas as pd
+import numpy as np
+import time
+import pymysql
+from sqlalchemy import create_engine
+
+pro = ts.pro_api('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+data_stock_basic = pro.query('stock_basic', list_status='L', fields='ts_code,symbol,name,area,list_date')
+ts_code = data_stock_basic['ts_code']
+def get_daily_k(code):
+    data_daily_k = pro.query('daily', ts_code=code, start_date='20190101', end_date='')
+    data_daily_k = data_daily_k.sort_values(by=['trade_date'], ascending=True)
+    data_daily_k.index = np.arange(len(data_daily_k))
+    return data_daily_k
+def get_weekly_k(code):
+    data_weekly_k = pro.query('weekly', ts_code=code, start_date='20190101', end_date='')
+    data_weekly_k = data_weekly_k.sort_values(by=['trade_date'], ascending=True)
+    data_weekly_k.index = np.arange(len(data_weekly_k))
+    return data_weekly_k
+def get_monthly_k(code):
+    data_monthly_k = pro.query('monthly', ts_code=code, start_date='20190101', end_date='')
+    data_monthly_k = data_monthly_k.sort_values(by=['trade_date'], ascending=True)
+    data_monthly_k.index = np.arange(len(data_monthly_k))
+    return data_monthly_k
+def get_macd_data(data_k, short=0, long=0, mid=0):
+    if short == 0:
+        short = 12
+    if long == 0:
+        long = 26
+    if mid == 0:
+        mid = 9
+    data_k['sema'] = pd.Series(data_k['close']).ewm(span=short).mean()
+    data_k['lema'] = pd.Series(data_k['close']).ewm(span=long).mean()
+    data_k.fillna(0, inplace=True)
+    data_k['diff'] = data_k['sema'] - data_k['lema']
+    data_k['dea'] = pd.Series(data_k['diff']).ewm(span=mid).mean()
+    data_k['macd'] = 2 * (data_k['diff'] - data_k['dea'])
+    data_k.fillna(0, inplace=True)
+    return data_k[['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'diff', 'dea', 'macd']]
+
+conn = create_engine("mysql+pymysql://root:my*huawei0001@94.191.35.26:3306/stocks?charset=utf8")
+conn_tolocal = create_engine("mysql+pymysql://root:root@127.0.0.1/stocks?charset=utf8")
+# data_stock_basic.to_sql('stock_basic', conn,if_exists='replace',index = True)
+# print(ts_code.count())
+
+# 加入日线、周线和月线是否需要进行写入数据库的判断
+
+def datainmysql(get_k,db_name):
+    #for i in range(0,ts_code.count()):
+    #time.sleep(5)
+    data_macd = get_macd_data(get_k)
+    pd.io.sql.to_sql(data_macd,db_name, conn_tolocal, index=False, if_exists='append')
+    #data_macd.to_sql('stock_macd_daily', conn, index=False, if_exists='append')
+    #print(data_macd)
+    return '数据写入成功！'
+
+# 在这里可以通过mysql表记录写入完成后的时间或者数据的最后时间
+# 来判断下次再读取数据的开始时间，交易日历可以读取字段进行时间引用
+
+start = time.perf_counter()
+for i in range(164,ts_code.count()):
+    time.sleep(5)
+    #传入日线的数据线和数据库名称。函数计算出macd值和写入数据库操作
+    datainmysql(get_daily_k(ts_code[i]),'daily_macd')
+    print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, '日线数据 is ok--', time.ctime())
+    datainmysql(get_weekly_k(ts_code[i]), 'weekly_macd')
+    print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, '周线数据 is ok--', time.ctime())
+    datainmysql(get_monthly_k(ts_code[i]), 'monthly_macd')
+    print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, '月线数据 is ok--', time.ctime())
+end = time.perf_counter()
+print(end - start, '秒')
+print('data is ok')
