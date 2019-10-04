@@ -1,0 +1,30 @@
+import tushare as ts
+import pandas as pd
+import numpy as np
+import time
+import pymysql
+import sys
+from sqlalchemy import create_engine
+#打开数据库连接
+conn =pymysql.connect(host='127.0.0.1',user='root',password='root',\
+                      database='stocks',charset='utf8')
+#使用 cursor() 方法创建一个游标对象 cursor
+cursor = conn.cursor()
+#使用 execute()  方法执行 SQL 查询,多个不同的sql查询
+sql_stock_basic='select ts_code,symbol,name,list_date from stock_basic'
+data_stock_basic=pd.read_sql(sql_stock_basic,con=conn)
+cursor_stock_basic=cursor.execute(sql_stock_basic)
+#print(conn)
+#print(data_stock_basic)
+#print(data_stock_basic['ts_code'])
+#print(data_stock_basic['ts_code'][0])
+#sql_code=data_stock_basic['ts_code'][0]
+#sql_macd_trade_date='select ts_code,trade_date,macd from daily_macd where ts_code={code} and macd<0 order by trade_date desc limit 1;'.format(code=sql_code)
+#字符串中引用变量，字符串变量的引号使用方法要注意
+for i in range(0,cursor_stock_basic):
+    sql_code = data_stock_basic['ts_code'][i]
+    sql_macd_trade_date = "select ts_code,trade_date,macd from daily_macd where \
+    ts_code='{code}' and macd<0 order by trade_date desc limit 10;".format(code=sql_code)
+    data_macd_trade_date = pd.read_sql(sql_macd_trade_date, con=conn)
+    print(data_macd_trade_date)
+print(cursor_stock_basic)
