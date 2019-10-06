@@ -1,51 +1,61 @@
-import tushare as ts
 import pandas as pd
-import numpy as np
 import time
 import pymysql
-import sys
 from sqlalchemy import create_engine
-#打开数据库连接
-conn =pymysql.connect(host='127.0.0.1',user='root',password='root',\
-                      database='stocks',charset='utf8')
-#使用 cursor() 方法创建一个游标对象 cursor
-cursor = conn.cursor()
-#使用 execute()  方法执行 SQL 查询,多个不同的sql查询
-#sql_stock_basic='select ts_code,symbol,name,list_date from stock_basic;'
-sql_stock_basic='SELECT ts_code FROM stocks.daily_macd group by ts_code;'
-#以上查询的数据表不一样，导致表中存在的字段可能不存在，可能报错，即索引超出范围
-#如，在基础表中有代码，但MACD表中无数据的情况，导致查询计算时报错。
-data_stock_basic=pd.read_sql(sql_stock_basic,con=conn)
-cursor_stock_basic=cursor.execute(sql_stock_basic)
-#print(conn)
-#print(data_stock_basic)
-#print(data_stock_basic['ts_code'])
-#print(data_stock_basic['ts_code'][0])
-#sql_code=data_stock_basic['ts_code'][0]
-#sql_macd_trade_date='select ts_code,trade_date,macd from daily_macd where ts_code={code} and macd<0 order by trade_date desc limit 1;'.format(code=sql_code)
-#字符串中引用变量，字符串变量的引号使用方法要注意
-conn_tolocal = create_engine("mysql+pymysql://root:root@127.0.0.1/stocks?charset=utf8")
-for i in range(0,cursor_stock_basic):
-    num = 0
-    sql_code = data_stock_basic['ts_code'][i]
-    sql_macd_trade_date = "select ts_code,trade_date,macd from daily_macd where \
-    ts_code='{code}'   \
-    order by trade_date desc limit 30;".format(code=sql_code)
-    data_macd_trade_date = pd.read_sql(sql_macd_trade_date, con=conn)
-    #print('I=',i,'记录为：',data_macd_trade_date)
 
-    if data_macd_trade_date['trade_date'][0]=='20190930':#此处时间值为数据表中采集数据的最新值，后期优化参数
-        for j in range(0,data_macd_trade_date['macd'].count()):
-            if data_macd_trade_date['macd'][j]<0:
-                num+=1   #值小于0计数器加1继续循环
-                continue
-            else:        #值大于0计数器退出
-                break
-        data_macd_trade_date['num'] = num
-        #print(data_macd_trade_date.head())
-    if num>=1:#天数，后期优化为变量参数引入
-        data_macd_trade_date.head(1).to_sql('macd_day_signal',conn_tolocal,index=False,if_exists='append')
-        #print(data_macd_trade_date['ts_code'][i],'写入成功！')
-print('所有数据处理完毕！共计{a}条'.format(a=i))
-cursor.close()
-conn.close()
+host='127.0.0.1'
+user='root'
+password='root'
+database='stocks'
+charset='utf8'
+day=1     #设置天数条件
+def cal_macd_num(macd_value_fromtb,intotb_name):
+    #打开数据库连接
+    conn =pymysql.connect(host=host,user=user,password=password,\
+                          database=database,charset=charset)
+    #使用 cursor() 方法创建一个游标对象 cursor
+    cursor = conn.cursor()
+    #使用 execute()  方法执行 SQL 查询,多个不同的sql查询
+    #sql_stock_basic='select ts_code,symbol,name,list_date from stock_basic;'
+    sql_stock_basic="SELECT ts_code FROM {fromtb} group by ts_code;" \
+                    .format(fromtb=macd_value_fromtb)
+    sql_newtime="SELECT max(trade_date) as newtime FROM {fromtb};" \
+                .format(fromtb=macd_value_fromtb)
+    #以上查询的数据表不一样，导致表中存在的字段可能不存在，可能报错，即索引超出范围
+    #如，在基础表中有代码，但MACD表中无数据的情况，导致查询计算时报错。
+    data_stock_basic=pd.read_sql(sql_stock_basic,con=conn)
+    #pd格式数据变量为数据列表名而不是具体的值，必须通过xxx['字段'][来引用具体的值]
+    newtime=pd.read_sql(sql_newtime,con=conn)
+    cursor_stock_basic=cursor.execute(sql_stock_basic)
+    #字符串中引用变量，字符串变量的引号使用方法要注意
+    conn_tolocal = create_engine("mysql+pymysql://{user}:{password}@{host}/{database}?charset=utf8" \
+                                 .format(user=user,password=password,host=host,database=database))
+    for i in range(0,cursor_stock_basic):
+        num = 0
+        sql_code = data_stock_basic['ts_code'][i]
+        sql_macd_trade_date = "select ts_code,trade_date,macd from {fromtb} where \
+                                ts_code='{code}'   \
+                                order by trade_date desc limit 30;" \
+                                .format(code=sql_code,fromtb=macd_value_fromtb)
+        data_macd_trade_date = pd.read_sql(sql_macd_trade_date, con=conn)
+        #判断数据表中该代码列表中时间记录的第一条记录值为最新记录值：
+        if data_macd_trade_date['trade_date'][0]==newtime['newtime'][0]:
+            #此处时间值为数据表中采集数据的最新值，后期优化参数
+            for j in range(0,data_macd_trade_date['macd'].count()):
+                if data_macd_trade_date['macd'][j]>0:
+                    num+=1   #值小于0计数器加1继续循环
+                    continue
+                else:        #值大于0计数器退出
+                   break
+            data_macd_trade_date['num'] = num
+        if num>=day:#天数，后期优化为变量参数引入
+            data_macd_trade_date.head(1).\
+            to_sql(intotb_name,conn_tolocal,index=False,if_exists='replace')
+            print(i,'写入成功！')
+    print('所有数据处理完毕！共计{a}条'.format(a=i))
+    cursor.close()
+    conn.close()
+#函数调用：读取macd值的数据表名，输出的表名。
+cal_macd_num('weekly_macd','weekly_macd_num_sigal_bak')
+#cal_macd_num('daily_macd','daily_macd_num_sigal_bak')
+#cal_macd_num('monthly_macd','monthly_macd_num_sigal_bak')
