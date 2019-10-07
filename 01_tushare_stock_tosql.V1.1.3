@@ -1,0 +1,64 @@
+import tushare as ts
+import pandas as pd
+import time
+from sqlalchemy import create_engine
+
+host='127.0.0.1'
+user='root'
+password='root'
+database='stocks'
+charset='utf8'
+conn_tolocal = create_engine("mysql+pymysql://{user}:{password}@{host}/{database}?charset=utf8" \
+                             .format(user=user, password=password, host=host, database=database))
+pro = ts.pro_api('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+data_stock_basic = pro.query('stock_basic', list_status='L', fields='ts_code,symbol,name,area,list_date')
+ts_code = data_stock_basic['ts_code']
+def data_basicinmysql(data_basic_intotb_name):
+    ok=data_stock_basic.to_sql(data_basic_intotb_name,conn_tolocal,if_exists='replace',index = True)
+    print('基础数据写入成功！')
+def get_data_k(jiekou,code,start):
+    data_k = pro.query(jiekou, ts_code=code, start_date=start, end_date='')
+    data_k = data_k.sort_values(by=['trade_date'], ascending=True)
+    #data_daily_k.index = np.arange(len(data_daily_k))
+    return data_k
+def get_macd_data(data_macd, short=0, long=0, mid=0):
+    if short == 0:
+        short = 12
+    if long == 0:
+        long = 26
+    if mid == 0:
+        mid = 9
+    data_macd['sema'] = pd.Series(data_macd['close']).ewm(span=short).mean()
+    data_macd['lema'] = pd.Series(data_macd['close']).ewm(span=long).mean()
+    data_macd.fillna(0, inplace=True)
+    data_macd['diff'] = data_macd['sema'] - data_macd['lema']
+    data_macd['dea'] = pd.Series(data_macd['diff']).ewm(span=mid).mean()
+    data_macd['macd'] = 2 * (data_macd['diff'] - data_macd['dea'])
+    data_macd.fillna(0, inplace=True)
+    return data_macd[['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'diff', 'dea', 'macd']]
+def macd_inmysql(get_k,db_name):
+    data_macd = get_macd_data(get_k)
+    pd.io.sql.to_sql(data_macd,db_name, conn_tolocal, index=False, if_exists='append')
+def data_all_intosql(jiekou,start,intotb_name):
+    print("准备写入macd数据")
+    start = time.perf_counter()
+    for i in range(0,ts_code.count()):
+        time.sleep(5)
+        macd_inmysql(get_data_k(jiekou,ts_code[i],start),intotb_name)
+        print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, 'is ok--', time.ctime())
+    end = time.perf_counter()
+    print(end - start, '秒')
+    print('data is ok')
+#--------函数调用区域-------------#
+data_basicinmysql('stock_basic')#此函数参数为数据表名称，统一参数列表设置
+
+#参数变量统一设置
+data_all_intosql('daily','20190101','daily_macd_01')
+#data_all_intosql('weekly','20190101','daily_macd_01')
+#data_all_intosql('monthly','20190101','daily_macd_01')
+
+
+
+
+
+
