@@ -1,0 +1,123 @@
+import tushare as ts
+import pandas as pd
+import time
+import pymysql
+from sqlalchemy import create_engine
+host='127.0.0.1'
+user='root'
+password='root'
+database='stocks'
+charset='utf8'
+day=1     #设置天数条件
+conn_tolocal = create_engine("mysql+pymysql://{user}:{password}@{host}/{database}?charset=utf8" \
+                             .format(user=user, password=password, host=host, database=database))
+pro = ts.pro_api('d43442cf91b3bbfb29c774df98eeeb0937f68e10dde9866c6b355132')
+data_stock_basic = pro.query('stock_basic', list_status='L', fields='ts_code,symbol,name,area,list_date')
+ts_code = data_stock_basic['ts_code']
+def data_basicinmysql(data_basic_intotb_name):
+    data_stock_basic.to_sql(data_basic_intotb_name,conn_tolocal,if_exists='append',index = True)
+    print('基础数据写入成功！')
+def get_data_k(jiekou,code,start):
+    """从tushare取得数据并返回数据列表"""
+    data_k = pro.query(jiekou, ts_code=code, start_date=start, end_date='')
+    data_k = data_k.sort_values(by=['trade_date'], ascending=True)
+    #data_daily_k.index = np.arange(len(data_daily_k))
+    return data_k
+def get_macd_data(data_macd, short=0, long=0, mid=0):
+    """从返回的数据列表带入此函数计算macd的三个追加字段，返回列表"""
+    if short == 0:
+        short = 12
+    if long == 0:
+        long = 26
+    if mid == 0:
+        mid = 9
+    data_macd['sema'] = pd.Series(data_macd['close']).ewm(span=short).mean()
+    data_macd['lema'] = pd.Series(data_macd['close']).ewm(span=long).mean()
+    data_macd.fillna(0, inplace=True)
+    data_macd['diff'] = data_macd['sema'] - data_macd['lema']
+    data_macd['dea'] = pd.Series(data_macd['diff']).ewm(span=mid).mean()
+    data_macd['macd'] = 2 * (data_macd['diff'] - data_macd['dea'])
+    data_macd.fillna(0, inplace=True)
+    return data_macd[['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'diff', 'dea', 'macd']]
+def macd_inmysql(get_k,db_name):
+    """macd数据列表入库处理函数"""
+    data_macd = get_macd_data(get_k)
+    pd.io.sql.to_sql(data_macd,db_name, conn_tolocal, index=False, if_exists='append')
+def data_all_intosql(jiekou,start,intotb_name):
+    """从tushare数据对应接口采集后调用macd数据入库处理函数写入数据库指定表名"""
+    print("准备写入macd数据")
+    for i in range(0,ts_code.count()):
+        time.sleep(1)
+        macd_inmysql(get_data_k(jiekou,ts_code[i],start),intotb_name)
+        print(ts_code[i], "名称：", data_stock_basic['name'][i], 'i=', i, 'is ok--', time.ctime())
+    print('data is ok')
+#数据表数据处理函数
+#------------------------------------
+def cal_macd_num(macd_value_fromtb,intotb_name):
+    #打开数据库连接
+    conn =pymysql.connect(host=host,user=user,password=password,\
+                          database=database,charset=charset)
+    #使用 cursor() 方法创建一个游标对象 cursor
+    cursor = conn.cursor()
+    #使用 execute()  方法执行 SQL 查询,多个不同的sql查询
+    #sql_stock_basic='select ts_code,symbol,name,list_date from stock_basic;'
+    sql_stock_basic="SELECT ts_code FROM {fromtb} group by ts_code;" \
+                    .format(fromtb=macd_value_fromtb)
+    #从参数当中读取表中数据时间最大的值为最新时间
+    sql_newtime="SELECT max(trade_date) as newtime FROM {fromtb};" \
+                .format(fromtb=macd_value_fromtb)
+    #以上查询的数据表不一样，导致表中存在的字段可能不存在，可能报错，即索引超出范围
+    #如，在基础表中有代码，但MACD表中无数据的情况，导致查询计算时报错。
+    data_stock_basic=pd.read_sql(sql_stock_basic,con=conn)
+    #pd格式数据变量为数据列表名而不是具体的值，必须通过xxx['字段'][来引用具体的值]
+    newtime=pd.read_sql(sql_newtime,con=conn)
+    cursor_stock_basic=cursor.execute(sql_stock_basic)
+    #字符串中引用变量，字符串变量的引号使用方法要注意
+    conn_tolocal = create_engine("mysql+pymysql://{user}:{password}@{host}/{database}?charset=utf8" \
+                                 .format(user=user,password=password,host=host,database=database))
+    for i in range(0,cursor_stock_basic):
+        num = 0
+        sql_code = data_stock_basic['ts_code'][i]
+        sql_macd_trade_date = "select ts_code,trade_date,macd from {fromtb} where \
+                                ts_code='{code}'   \
+                                order by trade_date desc limit 50;" \
+                                .format(code=sql_code,fromtb=macd_value_fromtb)
+        data_macd_trade_date = pd.read_sql(sql_macd_trade_date, con=conn)
+        #判断数据表中该代码列表中时间记录的第一条记录值为最新记录值：
+        if data_macd_trade_date['trade_date'][0]==newtime['newtime'][0]:
+            #此处时间值为数据表中采集数据的最新值，后期优化参数
+            for j in range(0,data_macd_trade_date['macd'].count()):
+                if data_macd_trade_date['macd'][j]<0:
+                    num+=1   #值小于0计数器加1继续循环
+                    continue
+                else:        #值大于0计数器退出
+                   break
+            for j in range(0, data_macd_trade_date['macd'].count()):
+                if data_macd_trade_date['macd'][j] > 0:
+                    num += 1  # 值大于0计数器加1继续循环
+                    continue
+                else:          # 值小于0计数器退出
+                    break
+            data_macd_trade_date['num'] = num
+        if num>=day:#天数，后期优化为变量参数引入
+            data_macd_trade_date.head(1).\
+            to_sql(intotb_name,conn_tolocal,index=False,if_exists='append')
+            print(i,'--',ts_code[i],' 写入成功！')
+    print('所有数据处理完毕！共计{a}条'.format(a=i))
+    cursor.close()
+    conn.close()
+#--------函数调用区域-------------#
+#基础数据入库
+#data_basicinmysql('stock_basic')#此函数参数为存储基础数据表名称，统一参数列表设置
+#参数变量统一设置
+
+#macd值入库
+#data_all_intosql('daily','20191001','daily_macd')
+#data_all_intosql('weekly','20191001','weekly_macd')
+#data_all_intosql('monthly','20191001','monthly_macd')
+
+
+#计算macd大于小于0天数，并存入到数据库供后期其他应用调用
+cal_macd_num('daily_macd','daily_macd_num')
+cal_macd_num('weekly_macd','weekly_macd_num')
+cal_macd_num('monthly_macd','monthly_macd_num')
